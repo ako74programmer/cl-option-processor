@@ -1,0 +1,88 @@
+/* Przed debagamiem ustawić zmienna:  -----------------------------------  */
+/*   ADDENVVAR ENVVAR(ILE_DEBUGGER_1) VALUE(ALLOW_WIDE_SCREEN) LEVEL(*JOB) */
+
+PGM        PARM(&OPTION) /* Pobieranie opcji jako parametr */
+ 
+/* Deklaracje zmiennych */
+DCL        VAR(&OPTION) TYPE(*CHAR) LEN(1)
+DCL        VAR(&STATUS) TYPE(*CHAR) LEN(20)
+DCL        VAR(&MESSAGE)   TYPE(*CHAR) LEN(512)
+DCL        VAR(&RETRYMAX)  TYPE(*UINT) LEN(4) VALUE(4)
+DCL        VAR(&RETRYNBR)  TYPE(*UINT) LEN(4) VALUE(0)
+DCL        VAR(&MSGREPLY)  TYPE(*CHAR) LEN(01)
+
+/* Możliwość wykorzystania funkcji w zawartej w serwis programie */
+/* w przypadku budowy programu bez modułów                       */
+/*                                                               */
+/* DCL        VAR(&DBLIBNAME) TYPE(*CHAR) LEN(10)                */
+/* DCLPRCOPT  BNDSRVPGM((SERVISPROGRAMNAME))                     */
+/* CALLPRC    PRC('getLibName') RTNVAL(&DBLIBNAME)               */
+/*                                                               */
+/* W przypadku wykorzystania budowy modułowej nie używamy        */
+/*   deklaracji   DCLPROCOPT                                     */
+/*                                                               */
+
+/* możliwość wywołania subrutyny */
+CALLSUBR   SUBR(CHECKPARAM)
+
+/* Sprawdzanie wprowadzonej opcji */
+IF         COND(&OPTION *EQ 'A') THEN(CHGVAR VAR(&STATUS) VALUE('Option A selected'))
+ELSE IF    COND(&OPTION *EQ 'B') THEN(CHGVAR VAR(&STATUS) VALUE('Option B selected'))
+ELSE IF    COND(&OPTION *EQ 'C') THEN(CHGVAR VAR(&STATUS) VALUE('Option C selected'))
+ELSE       CMD(GOTO CMDLBL(ERROR)) /* Jeśli opcja jest niepoprawna, idź do ERROR */
+
+/* Sekcja wyboru */
+SELECT
+    WHEN COND(&STATUS *EQ 'Option A selected') THEN(SNDUSRMSG MSG('Action for Option A executed') MSGTYPE(*INFO))
+    WHEN COND(&STATUS *EQ 'Option B selected') THEN(SNDUSRMSG MSG('Action for Option B executed') MSGTYPE(*INFO))
+    WHEN COND(&STATUS *EQ 'Option C selected') THEN(SNDUSRMSG MSG('Action for Option C executed') MSGTYPE(*INFO))
+    OTHERWISE CMD(SNDUSRMSG MSG('Invalid status detected') MSGTYPE(*INFO))
+ENDSELECT
+
+/* przykład monitorowania błędów  */
+DLTOBJ OBJ(QTEMP/TEST) OBJTYPE(*FILE)
+MONMSG MSGID(CPF2105)  /* Object TEST in QTEMP type *FILE not found. */
+
+/* przykład zapętlenia programu  */
+
+RUNAGAIN:
+CHGVAR     VAR(&RETRYNBR) VALUE(&RETRYNBR + 1)
+DLYJOB     DLY(2)            /* wstrzymanie programu na 10 sekund */
+IF  COND(&RETRYNBR *LT &RETRYMAX) THEN(DO)
+    CHGVAR     VAR(&MESSAGE) VALUE('To restart replay ''R'' or ''C'' to cancel.')
+    SNDUSRMSG  MSGID(CPF9897) MSGF(QCPFMSG) MSGDTA(&MESSAGE) MSGTYPE(*INQ) +
+                                   VALUES('R' 'C') MSGRPY(&MSGREPLY)
+    IF COND(&MSGREPLY = 'R') THEN(DO)
+       CHGVAR     VAR(&RETRYNBR) VALUE(0)
+       CHGVAR     VAR(&MESSAGE) VALUE('Program restart by ''R''  +
+                                response to message.')
+       SNDPGMMSG  MSGID(CPF9897) MSGF(QCPFMSG) MSGDTA(&MESSAGE) MSGTYPE(*DIAG)
+       GOTO       CMDLBL(RUNAGAIN)
+    ENDDO
+    ELSE DO
+        CHGVAR     VAR(&MESSAGE) VALUE('Program ended by ''C'' response +
+                                    to message.')
+        SNDPGMMSG  MSGID(CPF9897) MSGF(QCPFMSG) MSGDTA(&MESSAGE) MSGTYPE(*DIAG)
+    ENDDO                                  
+ENDDO                                  
+
+/* Etykieta zakończenia */
+END:      
+    SNDUSRMSG  MSG('Program completed successfully') MSGTYPE(*INFO)
+    RETURN
+
+/* Etykieta błędu */
+ERROR:    
+    SNDUSRMSG  MSG('An error occurred or invalid input provided') MSGTYPE(*INFO)
+    RETURN
+
+
+/* przykładowa procedura */
+SUBR CHECKPARAM
+   IF COND(%ADDRESS(&OPTION) *EQ *NULL) THEN(DO)
+      SNDUSRMSG  MSG('No parameters!') MSGTYPE(*INFO)
+      RETURN
+   ENDDO
+ENDSUBR    
+
+ENDPGM     /* Zakończenie programu */
